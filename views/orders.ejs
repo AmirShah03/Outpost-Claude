@@ -1,0 +1,305 @@
+<div class="page-header animate-in">
+  <h1>My Orders</h1>
+  <p>Track shipping, upload receipts, and manage your orders.</p>
+</div>
+
+<div id="ordersContent" class="animate-in" style="animation-delay: 0.05s;">
+  <!-- Spinner while loading -->
+  <div class="spinner"></div>
+</div>
+
+<script>
+  // Access control
+  if (!requireAuth()) {
+    // handled in requireAuth
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (isLoggedIn()) {
+      await loadOrders();
+    }
+  });
+
+  async function loadOrders() {
+    const container = document.getElementById('ordersContent');
+    try {
+      const orders = await api('/orders');
+      
+      if (!orders || orders.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <span class="empty-icon">📦</span>
+            <h3>No orders found</h3>
+            <p>You haven't placed any orders yet. Visit our catalog to find premium garments.</p>
+            <a href="/catalog" class="btn btn-primary" style="margin-top: 16px;">Browse Catalog</a>
+          </div>
+        `;
+        return;
+      }
+
+      const listHtml = orders.map(order => {
+        return `
+          <div class="order-card glass-card animate-in" onclick="openOrderModal(${order.id})">
+            <div class="order-card-header">
+              <span class="order-id">Order ID: #${order.id}</span>
+              ${getStatusBadge(order.status)}
+            </div>
+            <div class="order-card-body">
+              <div class="order-card-meta">
+                <p>Placed on: ${formatDateTime(order.created_at)}</p>
+                <p>Items count: ${order.item_count}</p>
+                <p>Payment: ${order.payment_method === 'card' ? 'Credit Card' : 'Bank Transfer'}</p>
+              </div>
+              <div class="order-card-total">
+                ${formatPrice(order.total_amount)}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = `<div style="display: flex; flex-direction: column; gap: 16px;">${listHtml}</div>`;
+    } catch (err) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <span class="empty-icon">⚠️</span>
+          <h3>Error loading orders</h3>
+          <p>${escapeHtml(err.message)}</p>
+          <button class="btn btn-secondary" onclick="loadOrders()">Retry</button>
+        </div>
+      `;
+    }
+  }
+
+  async function openOrderModal(orderId) {
+    try {
+      const order = await api(`/orders/${orderId}`);
+      if (!order) return;
+
+      // Generate items table
+      const itemsRowsHtml = order.items.map(item => {
+        return `
+          <tr>
+            <td>
+              <div style="font-weight: 600; color: var(--text-primary);">${escapeHtml(item.product_name)}</div>
+              <div style="font-size: 0.75rem; color: var(--text-muted);">Size: ${escapeHtml(item.product_size)}</div>
+            </td>
+            <td>${item.quantity}</td>
+            <td>${formatPrice(item.unit_price)}</td>
+            <td style="text-align: right; font-weight: 600;">${formatPrice(item.unit_price * item.quantity)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      // Generate status timeline
+      const statuses = ['pending', 'pending_verification', 'processing', 'shipped', 'delivered'];
+      const timelineLabels = {
+        pending: 'Ordered',
+        pending_verification: 'Verification',
+        processing: 'Processing',
+        shipped: 'Shipped',
+        delivered: 'Delivered'
+      };
+      
+      const currentIdx = statuses.indexOf(order.status);
+      const isCancelled = order.status === 'cancelled';
+      const isPendingCancel = order.status === 'pending_cancellation';
+
+      let timelineHtml = '';
+      if (!isCancelled && !isPendingCancel) {
+        timelineHtml = `
+          <div class="timeline" style="margin-top: 32px; margin-bottom: 32px;">
+            ${statuses.map((st, idx) => {
+              let cls = '';
+              let icon = '○';
+              if (idx < currentIdx) {
+                cls = 'completed';
+                icon = '✓';
+              } else if (idx === currentIdx) {
+                cls = 'active';
+                icon = '●';
+              }
+              return `
+                <div class="timeline-step ${cls}">
+                  <div class="step-dot">${icon}</div>
+                  <div class="step-label">${timelineLabels[st]}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else {
+        timelineHtml = `
+          <div class="loyalty-section" style="background: var(--danger-bg); border-color: rgba(239, 68, 68, 0.2); text-align: center; margin: 24px 0;">
+            <h4 style="color: var(--danger); font-weight: 700; font-size: 1.1rem; margin-bottom: 4px;">
+              ${isCancelled ? '❌ Order Cancelled' : '⏳ Cancellation Request Pending'}
+            </h4>
+            ${order.cancellation ? `<p style="font-size: 0.85rem; color: var(--text-secondary);">Reason: "${escapeHtml(order.cancellation.reason)}"</p>` : ''}
+            ${order.cancellation?.staff_notes ? `<p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 8px;">Staff Feedback: "${escapeHtml(order.cancellation.staff_notes)}"</p>` : ''}
+          </div>
+        `;
+      }
+
+      // Receipt details section
+      let receiptHtml = '';
+      if (order.payment_method === 'online_banking') {
+        if (order.status === 'pending_verification') {
+          receiptHtml = `
+            <div class="bank-details" style="margin-top: 24px;">
+              <h4 style="margin-bottom: 8px;">Banking Verification</h4>
+              ${order.receipt ? `
+                <p style="font-size: 0.85rem; color: var(--success); margin-bottom: 12px;">✅ Receipt file submitted: <strong>${escapeHtml(order.receipt.original_filename)}</strong></p>
+              ` : `
+                <p style="font-size: 0.85rem; color: var(--warning); margin-bottom: 12px;">⚠️ Awaiting receipt upload to verify your bank transfer.</p>
+              `}
+              <form id="receiptUploadForm" onsubmit="uploadReceiptSubmit(event, ${order.id})">
+                <div class="form-group" style="margin-bottom: 12px;">
+                  <input type="file" id="receiptUploadFile" class="form-control" accept="image/*,application/pdf" required>
+                </div>
+                <button type="submit" class="btn btn-secondary btn-sm btn-block">
+                  ${order.receipt ? 'Update Receipt File' : 'Upload Payment Receipt'}
+                </button>
+              </form>
+            </div>
+          `;
+        } else if (order.receipt) {
+          receiptHtml = `
+            <div class="bank-details" style="margin-top: 24px;">
+              <h4>Payment Verified</h4>
+              <p style="font-size: 0.85rem; color: var(--text-secondary);">Receipt: <a href="${order.receipt.file_path}" target="_blank" style="text-decoration: underline;">View Uploaded File</a></p>
+            </div>
+          `;
+        }
+      }
+
+      // Shipping tracking details
+      let shippingDetailsHtml = `
+        <div class="glass-card" style="margin-top: 24px; padding: 16px;">
+          <h4 style="margin-bottom: 12px; font-weight: 700;">Shipping Information</h4>
+          <p style="font-size: 0.85rem; color: var(--text-secondary);"><strong>Name:</strong> ${escapeHtml(order.shipping_name)}</p>
+          <p style="font-size: 0.85rem; color: var(--text-secondary);"><strong>Phone:</strong> ${escapeHtml(order.shipping_phone)}</p>
+          <p style="font-size: 0.85rem; color: var(--text-secondary);"><strong>Address:</strong> ${escapeHtml(order.shipping_address)}</p>
+          ${order.tracking_id ? `<p style="font-size: 0.85rem; color: var(--text-primary); margin-top: 8px;"><strong>Tracking ID:</strong> <span style="font-family: monospace; background: var(--bg-glass); padding: 2px 6px; border-radius: 4px;">${escapeHtml(order.tracking_id)}</span></p>` : ''}
+          ${order.expected_delivery ? `<p style="font-size: 0.85rem; color: var(--text-primary);"><strong>Expected Delivery:</strong> ${formatDate(order.expected_delivery)}</p>` : ''}
+        </div>
+      `;
+
+      // Cancellation buttons
+      let cancellationButtonHtml = '';
+      if (!isCancelled && !isPendingCancel && ['pending', 'pending_verification', 'processing'].includes(order.status)) {
+        cancellationButtonHtml = `
+          <button class="btn btn-danger btn-sm" onclick="showCancelFields(${order.id})" style="margin-right: auto;">Request Order Cancellation</button>
+        `;
+      }
+
+      const content = `
+        <div style="position: relative;">
+          <button style="position: absolute; right: -12px; top: -12px; background: none; border: none; font-size: 1.5rem; color: var(--text-muted); cursor: pointer;" onclick="closeModal()">×</button>
+          
+          <div style="margin-top: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-glass); padding-bottom: 12px; margin-bottom: 16px;">
+              <h2 style="font-size: 1.3rem; font-weight: 700;">Order Details</h2>
+              <span style="font-family: monospace; font-size: 0.9rem; color: var(--text-muted);">#${order.id}</span>
+            </div>
+
+            ${timelineHtml}
+
+            <!-- Items Table -->
+            <table class="data-table" style="margin-top: 20px;">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Qty</th>
+                  <th>Unit Price</th>
+                  <th style="text-align: right;">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${itemsRowsHtml}
+              </tbody>
+            </table>
+
+            <div style="display: flex; flex-direction: column; align-items: flex-end; margin-top: 16px; border-top: 1px solid var(--border-glass); padding-top: 12px;">
+              ${order.points_used > 0 ? `<div style="font-size: 0.85rem; color: var(--text-secondary);">Redeemed Points Discount: -${formatPrice(order.points_used / 100)}</div>` : ''}
+              ${order.points_earned > 0 ? `<div style="font-size: 0.85rem; color: var(--success); margin-bottom: 4px;">Loyalty Points Earned: +${order.points_earned} pts</div>` : ''}
+              <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-primary-light);">Total: ${formatPrice(order.total_amount)}</div>
+            </div>
+
+            ${shippingDetailsHtml}
+            ${receiptHtml}
+
+            <!-- Cancellation inputs (hidden initially) -->
+            <div id="cancellationInputBlock" style="display:none; margin-top: 24px; padding: 16px; background: var(--danger-bg); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--radius-md);">
+              <h4 style="color: var(--danger); margin-bottom: 12px;">Request Cancellation</h4>
+              <div class="form-group">
+                <label for="cancelReason">Reason for cancelling your order</label>
+                <textarea id="cancelReason" class="form-control" placeholder="Please explain why you need to cancel this order..." required></textarea>
+              </div>
+              <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px;">
+                <button class="btn btn-secondary btn-sm" onclick="document.getElementById('cancellationInputBlock').style.display='none'">Cancel</button>
+                <button class="btn btn-danger btn-sm" style="background: var(--danger); color: white;" onclick="submitCancellationRequest(${order.id})">Submit Request</button>
+              </div>
+            </div>
+
+            <div class="modal-actions" style="margin-top: 24px; border-top: 1px solid var(--border-glass); padding-top: 16px;">
+              ${cancellationButtonHtml}
+              <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      showModal(content);
+    } catch (err) {
+      showToast('Failed to load order details', 'error');
+    }
+  }
+
+  function showCancelFields() {
+    document.getElementById('cancellationInputBlock').style.display = 'block';
+    document.getElementById('cancellationInputBlock').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  async function submitCancellationRequest(orderId) {
+    const reason = document.getElementById('cancelReason').value;
+    if (!reason.trim()) {
+      showToast('Cancellation reason is required.', 'warning');
+      return;
+    }
+
+    try {
+      await api(`/orders/${orderId}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      showToast('Cancellation request submitted successfully.', 'success');
+      closeModal();
+      loadOrders();
+    } catch (err) {
+      showToast(err.message || 'Failed to request cancellation', 'error');
+    }
+  }
+
+  async function uploadReceiptSubmit(event, orderId) {
+    event.preventDefault();
+    const fileInput = document.getElementById('receiptUploadFile');
+    if (fileInput.files.length === 0) return;
+
+    const file = fileInput.files[0];
+    const formData = new FormData();
+    formData.append('order_id', orderId);
+    formData.append('receipt', file);
+
+    try {
+      await api('/payments/upload-receipt', {
+        method: 'POST',
+        body: formData
+      });
+      showToast('Receipt file uploaded successfully!', 'success');
+      closeModal();
+      loadOrders();
+    } catch (err) {
+      showToast(err.message || 'Failed to upload receipt', 'error');
+    }
+  }
+</script>

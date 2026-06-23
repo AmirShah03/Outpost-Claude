@@ -1,0 +1,396 @@
+<div class="page-header animate-in">
+  <h1>Shopping Cart</h1>
+  <p>Manage your items and proceed to secure checkout.</p>
+</div>
+
+<div id="cartContent" class="animate-in" style="animation-delay: 0.05s;">
+  <!-- Spinner while loading -->
+  <div class="spinner"></div>
+</div>
+
+<script>
+  // Access control
+  if (!requireAuth()) {
+    // Redirection is handled in requireAuth
+  }
+
+  let cartData = { items: [], total: 0, itemCount: 0 };
+  let userLoyaltyPoints = 0;
+  const POINTS_TO_DOLLAR = 100; // 100 points = $1.00
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (isLoggedIn()) {
+      await loadCart();
+    }
+  });
+
+  async function loadCart() {
+    try {
+      // Fire both requests in parallel — saves ~300-500ms
+      const [cartResult, profileResult] = await Promise.all([
+        api('/cart'),
+        api('/profile').catch(() => ({}))
+      ]);
+
+      cartData = cartResult;
+      userLoyaltyPoints = profileResult.loyalty_points || 0;
+      renderCart(profileResult);
+    } catch (err) {
+      document.getElementById('cartContent').innerHTML = `
+        <div style="text-align:center; padding: 60px 20px;">
+          <i class="fas fa-exclamation-circle" style="font-size: 3rem; color: var(--danger); margin-bottom: 16px; display: block;"></i>
+          <h3>Error loading cart</h3>
+          <p style="color: var(--text-secondary); margin-bottom: 20px;">${escapeHtml(err.message)}</p>
+          <button class="btn btn-primary" onclick="loadCart()"><i class="fas fa-redo"></i> Retry</button>
+        </div>
+      `;
+    }
+  }
+
+  function renderCart(profile = {}) {
+    const container = document.getElementById('cartContent');
+    if (!cartData.items || cartData.items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <span class="empty-icon">🛒</span>
+          <h3>Your cart is empty</h3>
+          <p>Explore our premium catalog to add exclusive items.</p>
+          <a href="/catalog" class="btn btn-primary" style="margin-top: 16px;">Go to Catalog</a>
+        </div>
+      `;
+      return;
+    }
+
+    const itemsHtml = cartData.items.map(item => {
+      const itemImage = item.image_url || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%231a233a"/><text x="50" y="55" font-family="sans-serif" font-size="12" fill="%234a5d88" text-anchor="middle">No Image</text></svg>';
+      return `
+        <div class="cart-item">
+          <div class="cart-item-image">
+            <img src="${itemImage}" alt="${escapeHtml(item.product_name)}">
+          </div>
+          <div class="cart-item-info">
+            <h4>${escapeHtml(item.product_name)}</h4>
+            <span class="size">Size: ${escapeHtml(item.size)}</span>
+          </div>
+          <div class="cart-item-controls">
+            <div class="quantity-control">
+              <button onclick="updateQty(${item.id}, ${item.quantity - 1})" ${item.quantity <= 1 ? 'disabled' : ''}>-</button>
+              <span>${item.quantity}</span>
+              <button onclick="updateQty(${item.id}, ${item.quantity + 1})" ${item.quantity >= item.stock_quantity ? 'disabled' : ''}>+</button>
+            </div>
+            <button class="btn btn-danger btn-sm" onclick="removeItem(${item.id})" style="padding: 6px 10px; margin-left: 8px;">🗑️</button>
+          </div>
+          <div class="cart-item-price">
+            ${formatPrice(item.price * item.quantity)}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Values for summary
+    const subtotal = cartData.total;
+    const maxDiscountPoints = Math.min(userLoyaltyPoints, Math.ceil(subtotal * POINTS_TO_DOLLAR));
+    const maxDiscountValue = maxDiscountPoints / POINTS_TO_DOLLAR;
+
+    container.innerHTML = `
+      <div class="checkout-grid">
+        <!-- Left: Cart Items List -->
+        <div class="glass-card" style="padding: 24px;">
+          <h3 style="margin-bottom: 20px; font-weight: 700; border-bottom: 1px solid var(--border-glass); padding-bottom: 12px;">Cart Items</h3>
+          <div style="display: flex; flex-direction: column;">
+            ${itemsHtml}
+          </div>
+        </div>
+
+        <!-- Right: Checkout Summary and Details -->
+        <div>
+          <!-- Summary Card -->
+          <div class="glass-card cart-summary" style="margin-top: 0; margin-bottom: 24px;">
+            <h3 style="margin-bottom: 20px; font-weight: 700;">Order Summary</h3>
+            <div class="summary-row">
+              <span class="label">Subtotal</span>
+              <span class="value" id="subtotalVal">${formatPrice(subtotal)}</span>
+            </div>
+            
+            ${userLoyaltyPoints > 0 ? `
+              <div class="loyalty-section">
+                <div class="points-balance">🎁 You have ${userLoyaltyPoints} Loyalty Points</div>
+                <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 12px;">Redeem up to ${maxDiscountPoints} points for a ${formatPrice(maxDiscountValue)} discount (100 pts = $1.00).</p>
+                <div class="form-group" style="margin-bottom: 0; display: flex; gap: 8px;">
+                  <input type="number" id="redeemPointsInput" class="form-control" placeholder="Points to use" min="0" max="${maxDiscountPoints}" oninput="recalculateTotal()" style="padding: 8px 12px; font-size: 0.85rem;">
+                  <button class="btn btn-secondary btn-sm" onclick="applyMaxPoints(${maxDiscountPoints})">Max</button>
+                </div>
+              </div>
+            ` : ''}
+
+            <div class="summary-row" style="display:none;" id="discountRow">
+              <span class="label" style="color: var(--success);">Loyalty Discount</span>
+              <span class="value" style="color: var(--success);" id="discountVal">-$0.00</span>
+            </div>
+
+            <div class="summary-row total">
+              <span class="label">Total Amount</span>
+              <span class="value" id="totalVal">${formatPrice(subtotal)}</span>
+            </div>
+          </div>
+
+          <!-- Shipping and Payment Form -->
+          <form id="checkoutForm" onsubmit="handleCheckout(event)" class="glass-card">
+            <h3 style="margin-bottom: 20px; font-weight: 700;">Delivery & Payment</h3>
+            
+            <div class="form-group">
+              <label for="shippingName">Recipient Name</label>
+              <input type="text" id="shippingName" class="form-control" value="${escapeHtml(profile.name || '')}" required>
+            </div>
+            <div class="form-group">
+              <label for="shippingPhone">Recipient Phone</label>
+              <input type="tel" id="shippingPhone" class="form-control" value="${escapeHtml(profile.phone || '')}" required>
+            </div>
+            <div class="form-group">
+              <label for="shippingAddress">Shipping Address</label>
+              <textarea id="shippingAddress" class="form-control" required>${escapeHtml(profile.address || '')}</textarea>
+            </div>
+
+            <label style="display: block; margin-bottom: 6px; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary);">Payment Method</label>
+            <div class="payment-methods">
+              <div class="payment-method selected" id="method-card" onclick="selectPaymentMethod('card')">
+                <span class="method-icon">💳</span>
+                <span class="method-name">Credit Card</span>
+              </div>
+              <div class="payment-method" id="method-banking" onclick="selectPaymentMethod('online_banking')">
+                <span class="method-icon">🏦</span>
+                <span class="method-name">Bank Transfer</span>
+              </div>
+            </div>
+
+            <!-- Card Details Fields -->
+            <div id="cardDetailsBlock">
+              <div class="form-group">
+                <label for="cardNumber">Card Number</label>
+                <input type="text" id="cardNumber" class="form-control" placeholder="16-digit card number" maxlength="16" pattern="\\d{16}" required>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="cardExpiry">Expiry Date</label>
+                  <input type="text" id="cardExpiry" class="form-control" placeholder="MM/YY" maxlength="5" pattern="(0[1-9]|1[0-2])/\\d{2}" required>
+                </div>
+                <div class="form-group">
+                  <label for="cardCvv">CVV</label>
+                  <input type="text" id="cardCvv" class="form-control" placeholder="3-4 digits" maxlength="4" pattern="\\d{3,4}" required>
+                </div>
+              </div>
+            </div>
+
+            <!-- Bank Transfer Details Fields -->
+            <div id="bankingDetailsBlock" style="display: none;">
+              <div class="bank-details" style="margin-top: 0; margin-bottom: 20px;">
+                <h4>Outpost Official Bank Account</h4>
+                <div class="detail-row">
+                  <span class="label">Bank Name</span>
+                  <span class="value">Outpost Premium Bank</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Account Number</span>
+                  <span class="value">8888-1234-5678-9000</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Account Name</span>
+                  <span class="value">Outpost Claude Retail Ltd.</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="receiptUpload">Upload Transfer Receipt (Image/PDF)</label>
+                <input type="file" id="receiptUpload" class="form-control" accept="image/*,application/pdf">
+                <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Mandatory for payment confirmation. You can also upload this later in the order dashboard.</p>
+              </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block btn-lg" style="margin-top: 24px;" id="submitCheckoutBtn">Place Order</button>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
+  function applyMaxPoints(max) {
+    const input = document.getElementById('redeemPointsInput');
+    if (input) {
+      input.value = max;
+      recalculateTotal();
+    }
+  }
+
+  function recalculateTotal() {
+    const subtotal = cartData.total;
+    const input = document.getElementById('redeemPointsInput');
+    let points = parseInt(input?.value) || 0;
+
+    const maxDiscountPoints = Math.min(userLoyaltyPoints, Math.ceil(subtotal * POINTS_TO_DOLLAR));
+    if (points > maxDiscountPoints) {
+      points = maxDiscountPoints;
+      if (input) input.value = points;
+    }
+    if (points < 0) {
+      points = 0;
+      if (input) input.value = 0;
+    }
+
+    const discount = points / POINTS_TO_DOLLAR;
+    const total = Math.max(0, subtotal - discount);
+
+    const discountRow = document.getElementById('discountRow');
+    const discountVal = document.getElementById('discountVal');
+    const totalVal = document.getElementById('totalVal');
+
+    if (points > 0) {
+      discountRow.style.display = 'flex';
+      discountVal.textContent = `-${formatPrice(discount)}`;
+    } else {
+      discountRow.style.display = 'none';
+    }
+
+    totalVal.textContent = formatPrice(total);
+  }
+
+  async function updateQty(itemId, newQty) {
+    try {
+      await api(`/cart/${itemId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ quantity: newQty })
+      });
+      await loadCart();
+      updateCartBadge();
+    } catch (err) {
+      showToast(err.message || 'Failed to update quantity', 'error');
+    }
+  }
+
+  async function removeItem(itemId) {
+    try {
+      await api(`/cart/${itemId}`, { method: 'DELETE' });
+      showToast('Item removed from cart', 'success');
+      await loadCart();
+      updateCartBadge();
+    } catch (err) {
+      showToast(err.message || 'Failed to remove item', 'error');
+    }
+  }
+
+  let selectedPaymentMethod = 'card';
+
+  function selectPaymentMethod(method) {
+    selectedPaymentMethod = method;
+    const methodCard = document.getElementById('method-card');
+    const methodBanking = document.getElementById('method-banking');
+    const cardBlock = document.getElementById('cardDetailsBlock');
+    const bankingBlock = document.getElementById('bankingDetailsBlock');
+
+    // Inputs inside Blocks to enable/disable required validators
+    const cardInputs = cardBlock.querySelectorAll('input');
+    const receiptInput = document.getElementById('receiptUpload');
+
+    if (method === 'card') {
+      methodCard.classList.add('selected');
+      methodBanking.classList.remove('selected');
+      cardBlock.style.display = 'block';
+      bankingBlock.style.display = 'none';
+      cardInputs.forEach(el => el.required = true);
+      if (receiptInput) receiptInput.required = false;
+    } else {
+      methodCard.classList.remove('selected');
+      methodBanking.classList.add('selected');
+      cardBlock.style.display = 'none';
+      bankingBlock.style.display = 'block';
+      cardInputs.forEach(el => el.required = false);
+      // Receipt upload is required for bank transfer checkout if uploaded immediately,
+      // but let's make it optional on place order if they can upload later, or require it
+      // if file input is selected. Let's make it required on submit for immediate processing.
+      if (receiptInput) receiptInput.required = true;
+    }
+  }
+
+  async function handleCheckout(event) {
+    event.preventDefault();
+    const btn = document.getElementById('submitCheckoutBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing Order...';
+
+    const shipping_name = document.getElementById('shippingName').value;
+    const shipping_phone = document.getElementById('shippingPhone').value;
+    const shipping_address = document.getElementById('shippingAddress').value;
+    const pointsInput = document.getElementById('redeemPointsInput');
+    const points_to_use = parseInt(pointsInput?.value) || 0;
+
+    try {
+      // 1. Create the order
+      const orderRes = await api('/orders', {
+        method: 'POST',
+        body: JSON.stringify({
+          shipping_name,
+          shipping_phone,
+          shipping_address,
+          payment_method: selectedPaymentMethod,
+          points_to_use
+        })
+      });
+
+      const order = orderRes.order;
+
+      // 2. Handle Payment Processing
+      if (selectedPaymentMethod === 'card') {
+        const card_number = document.getElementById('cardNumber').value;
+        const expiry_date = document.getElementById('cardExpiry').value;
+        const cvv = document.getElementById('cardCvv').value;
+
+        try {
+          await api('/payments/card', {
+            method: 'POST',
+            body: JSON.stringify({
+              order_id: order.id,
+              card_number,
+              expiry_date,
+              cvv
+            })
+          });
+          showToast('Payment successful! Your order has been placed.', 'success');
+          updateCartBadge();
+          setTimeout(() => { window.location.href = '/orders'; }, 1000);
+        } catch (payErr) {
+          showToast(`Order created but card payment failed: ${payErr.message}. You can retry payment in the orders panel.`, 'error');
+          setTimeout(() => { window.location.href = '/orders'; }, 2000);
+        }
+      } else {
+        // Online banking receipt upload
+        const fileInput = document.getElementById('receiptUpload');
+        if (fileInput.files.length > 0) {
+          const file = fileInput.files[0];
+          const formData = new FormData();
+          formData.append('order_id', order.id);
+          formData.append('receipt', file);
+
+          try {
+            await api('/payments/upload-receipt', {
+              method: 'POST',
+              body: formData
+            });
+            showToast('Order placed & receipt uploaded successfully! Awaiting verification.', 'success');
+            updateCartBadge();
+            setTimeout(() => { window.location.href = '/orders'; }, 1000);
+          } catch (uploadErr) {
+            showToast(`Order placed, but receipt upload failed: ${uploadErr.message}. Please upload receipt in orders panel.`, 'warning');
+            setTimeout(() => { window.location.href = '/orders'; }, 2000);
+          }
+        } else {
+          showToast('Order placed! Please upload your receipt as soon as possible.', 'info');
+          updateCartBadge();
+          setTimeout(() => { window.location.href = '/orders'; }, 1000);
+        }
+      }
+
+    } catch (err) {
+      showToast(err.message || 'Checkout failed', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Place Order';
+    }
+  }
+</script>

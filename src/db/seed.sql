@@ -3,11 +3,11 @@
 
 -- Staff user (password: staff123)
 INSERT INTO users (id, email, password_hash, name, phone, role) VALUES
-('a0000000-0000-0000-0000-000000000001', 'admin@outpost.com', '$2b$12$LJ3m4ys3Lz0YBNKqxZvKheZbGFGvcejYe5.nF.FPqfLkB1mRdKYVK', 'Admin Staff', '+60123456789', 'staff');
+('a0000000-0000-0000-0000-000000000001', 'admin@outpost.com', '$2b$12$lQirCu2YeoIQ9bvXlteqVenrHcFf7b9PICaY87RiIW3c2obMTP/Ti', 'Admin Staff', '+60123456789', 'staff');
 
 -- Demo customer (password: customer123)
 INSERT INTO users (id, email, password_hash, name, phone, address, role, loyalty_points) VALUES
-('b0000000-0000-0000-0000-000000000001', 'john@example.com', '$2b$12$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'John Doe', '+60111222333', '123 Main Street, Kuala Lumpur 50000', 'customer', 250);
+('b0000000-0000-0000-0000-000000000001', 'john@example.com', '$2b$12$cpBz0HsZgSPHyGuH6vwV6OClOPmE5uACLByMl2KNiasollTpmQ/6G', 'John Doe', '+60111222333', '123 Main Street, Kuala Lumpur 50000', 'customer', 250);
 
 -- Categories
 INSERT INTO categories (id, name, description) VALUES

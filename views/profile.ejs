@@ -1,0 +1,161 @@
+<div class="page-header animate-in">
+  <h1>My Profile</h1>
+  <p>Manage your account settings and view your loyalty points details.</p>
+</div>
+
+<div class="profile-grid animate-in" style="animation-delay: 0.05s;">
+  <!-- Left: Update Profile Details -->
+  <div class="glass-card">
+    <h3 style="margin-bottom: 24px; font-weight: 700; border-bottom: 1px solid var(--border-glass); padding-bottom: 12px;">Account Details</h3>
+    <form id="profileForm" onsubmit="handleProfileUpdate(event)">
+      <div class="form-group">
+        <label for="profileName">Full Name</label>
+        <input type="text" id="profileName" class="form-control" required>
+      </div>
+      <div class="form-group">
+        <label for="profileEmail">Email Address</label>
+        <input type="email" id="profileEmail" class="form-control" readonly style="opacity: 0.7; cursor: not-allowed;">
+        <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">Email address cannot be changed.</p>
+      </div>
+      <div class="form-group">
+        <label for="profilePhone">Phone Number</label>
+        <input type="tel" id="profilePhone" class="form-control">
+      </div>
+      <div class="form-group">
+        <label for="profileAddress">Default Shipping Address</label>
+        <textarea id="profileAddress" class="form-control" style="min-height: 120px;"></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary" style="margin-top: 16px;" id="saveProfileBtn">Save Changes</button>
+    </form>
+  </div>
+
+  <!-- Right: Loyalty Point Summary & History -->
+  <div style="display: flex; flex-direction: column; gap: 24px;">
+    <div class="loyalty-card glass-card">
+      <div class="points-value" id="loyaltyPointsVal">0</div>
+      <div class="points-label">Loyalty Points Balance</div>
+      <div class="cash-value" id="loyaltyCashVal">Equivalent to $0.00 cash back</div>
+    </div>
+
+    <div class="glass-card" style="flex: 1;">
+      <h3 style="margin-bottom: 16px; font-weight: 700;">Points History</h3>
+      <div style="overflow-x: auto; max-height: 300px;">
+        <table class="data-table" id="loyaltyHistoryTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Order ID</th>
+              <th>Action</th>
+              <th style="text-align: right;">Points</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="4" style="text-align: center; color: var(--text-muted);">No points activity found.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Access control
+  if (!requireAuth()) {
+    // Handled in requireAuth
+  }
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    if (isLoggedIn()) {
+      await loadProfileData();
+      await loadLoyaltyData();
+    }
+  });
+
+  async function loadProfileData() {
+    try {
+      const profile = await api('/profile');
+      document.getElementById('profileName').value = profile.name || '';
+      document.getElementById('profileEmail').value = profile.email || '';
+      document.getElementById('profilePhone').value = profile.phone || '';
+      document.getElementById('profileAddress').value = profile.address || '';
+    } catch (err) {
+      showToast('Failed to load profile details', 'error');
+    }
+  }
+
+  async function loadLoyaltyData() {
+    try {
+      const data = await api('/loyalty');
+      document.getElementById('loyaltyPointsVal').textContent = data.points;
+      document.getElementById('loyaltyCashVal').textContent = `Equivalent to ${formatPrice(data.pointsValue)} cash back`;
+
+      const tbody = document.querySelector('#loyaltyHistoryTable tbody');
+      if (!data.history || data.history.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">No points activity found.</td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = data.history.map(row => {
+        let action = '';
+        let pointsStr = '';
+        if (row.points_used > 0) {
+          action = 'Redeemed Discount';
+          pointsStr = `<span style="color: var(--danger); font-weight: 600;">-${row.points_used} pts</span>`;
+        } else if (row.points_earned > 0) {
+          action = 'Earned from Purchase';
+          pointsStr = `<span style="color: var(--success); font-weight: 600;">+${row.points_earned} pts</span>`;
+        }
+
+        return `
+          <tr>
+            <td>${formatDate(row.created_at)}</td>
+            <td><a href="/orders" style="text-decoration: underline;">#${row.id}</a></td>
+            <td>${action}</td>
+            <td style="text-align: right;">${pointsStr}</td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      showToast('Failed to load loyalty point details', 'error');
+    }
+  }
+
+  async function handleProfileUpdate(event) {
+    event.preventDefault();
+    const btn = document.getElementById('saveProfileBtn');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const name = document.getElementById('profileName').value;
+    const phone = document.getElementById('profilePhone').value;
+    const address = document.getElementById('profileAddress').value;
+
+    try {
+      const data = await api('/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ name, phone, address })
+      });
+
+      // Update local storage user name
+      const user = getUser();
+      if (user) {
+        user.name = data.profile.name;
+        setUser(user);
+        updateNavbar();
+      }
+
+      showToast('Profile details updated successfully!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Profile update failed', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Save Changes';
+    }
+  }
+</script>

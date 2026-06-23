@@ -1,0 +1,87 @@
+<div class="page-header animate-in">
+  <h1>Staff Dashboard</h1>
+  <p>Overview of orders, revenue, and pending actions.</p>
+</div>
+
+<div class="stats-grid" id="staffStats">
+  <div class="stat-card glass-card animate-in">
+    <div class="stat-icon stat-icon-amber">⏳</div>
+    <div class="stat-value" id="statPending">—</div>
+    <div class="stat-label">Pending Verification</div>
+  </div>
+  <div class="stat-card glass-card animate-in" style="animation-delay: 0.05s;">
+    <div class="stat-icon stat-icon-indigo">⚙️</div>
+    <div class="stat-value" id="statProcessing">—</div>
+    <div class="stat-label">Processing</div>
+  </div>
+  <div class="stat-card glass-card animate-in" style="animation-delay: 0.1s;">
+    <div class="stat-icon stat-icon-sky">🚚</div>
+    <div class="stat-value" id="statShipped">—</div>
+    <div class="stat-label">Shipped</div>
+  </div>
+  <div class="stat-card glass-card animate-in" style="animation-delay: 0.15s;">
+    <div class="stat-icon stat-icon-emerald">💰</div>
+    <div class="stat-value" id="statRevenue">—</div>
+    <div class="stat-label">Total Revenue</div>
+  </div>
+</div>
+
+<div class="dashboard-panel glass-card animate-in" style="animation-delay: 0.1s;">
+  <div class="panel-header">
+    <h2>Recent Orders</h2>
+    <a href="/staff/orders" class="panel-link">Manage all</a>
+  </div>
+  <div id="staffRecentOrders">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<script>
+  if (!requireStaff()) { /* redirect handled */ }
+
+  document.addEventListener('DOMContentLoaded', loadStaffDashboard);
+
+  async function loadStaffDashboard() {
+    try {
+      const data = await api('/staff/dashboard');
+      const stats = data.stats;
+
+      document.getElementById('statPending').textContent = stats.pending_verification ?? 0;
+      document.getElementById('statProcessing').textContent = stats.processing ?? 0;
+      document.getElementById('statShipped').textContent = stats.shipped ?? 0;
+      document.getElementById('statRevenue').textContent = formatPrice(stats.total_revenue ?? 0);
+
+      const container = document.getElementById('staffRecentOrders');
+      const orders = data.recentOrders || [];
+
+      if (orders.length === 0) {
+        container.innerHTML = `
+          <div class="dashboard-empty">
+            <span class="dashboard-empty-icon">📋</span>
+            <p>No orders yet</p>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = `
+        <ul class="dashboard-list">
+          ${orders.map(order => `
+            <li class="dashboard-list-item">
+              <div class="list-item-main">
+                <span class="list-item-title">#${order.id} — ${escapeHtml(order.customer_name)}</span>
+                <span class="list-item-meta">${formatDateTime(order.created_at)}</span>
+              </div>
+              <div class="list-item-end">
+                ${getStatusBadge(order.status)}
+                <span class="list-item-price">${formatPrice(order.total_amount)}</span>
+              </div>
+            </li>
+          `).join('')}
+        </ul>
+      `;
+    } catch (err) {
+      showToast(err.message || 'Failed to load dashboard', 'error');
+    }
+  }
+</script>

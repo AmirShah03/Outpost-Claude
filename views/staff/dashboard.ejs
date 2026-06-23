@@ -1,0 +1,111 @@
+<div class="staff-page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <p>Overview of orders, revenue, and pending actions.</p>
+  </div>
+  <a href="/staff/orders" class="btn btn-primary"><i class="fas fa-list"></i> Manage Orders</a>
+</div>
+
+<!-- Stat cards -->
+<div class="stats-grid" id="staffStats">
+  <div class="stat-card">
+    <div class="stat-icon-wrap stat-amber"><i class="fas fa-clock"></i></div>
+    <div class="stat-value" id="statPending">—</div>
+    <div class="stat-label">Pending Verification</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon-wrap stat-blue"><i class="fas fa-cog"></i></div>
+    <div class="stat-value" id="statProcessing">—</div>
+    <div class="stat-label">Processing</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon-wrap stat-sky"><i class="fas fa-truck"></i></div>
+    <div class="stat-value" id="statShipped">—</div>
+    <div class="stat-label">Shipped</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon-wrap stat-orange"><i class="fas fa-dollar-sign"></i></div>
+    <div class="stat-value" id="statRevenue">—</div>
+    <div class="stat-label">Total Revenue</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon-wrap stat-red"><i class="fas fa-times-circle"></i></div>
+    <div class="stat-value" id="statCancellation">—</div>
+    <div class="stat-label">Pending Cancellations</div>
+  </div>
+</div>
+
+<!-- Recent Orders -->
+<div class="staff-panel" style="margin-top: 32px;">
+  <div class="staff-panel-header">
+    <h2><i class="fas fa-receipt" style="color: #F97316; margin-right: 8px;"></i> Recent Orders</h2>
+    <a href="/staff/orders" class="btn-link">View all orders →</a>
+  </div>
+  <div id="staffRecentOrders"><div class="spinner-sm"></div></div>
+</div>
+
+<!-- Quick Actions -->
+<div class="staff-panel" style="margin-top: 24px;">
+  <div class="staff-panel-header">
+    <h2><i class="fas fa-bolt" style="color: #F97316; margin-right: 8px;"></i> Quick Actions</h2>
+  </div>
+  <div style="display: flex; gap: 12px; flex-wrap: wrap; padding: 20px;">
+    <a href="/staff/orders?filter=pending_verification" class="btn btn-outline"><i class="fas fa-check-circle"></i> Verify Payments</a>
+    <a href="/staff/cancellations" class="btn btn-outline"><i class="fas fa-ban"></i> Review Cancellations</a>
+    <a href="/staff/products" class="btn btn-outline"><i class="fas fa-box"></i> Manage Products</a>
+    <a href="/staff/reports" class="btn btn-outline"><i class="fas fa-chart-bar"></i> View Reports</a>
+  </div>
+</div>
+
+<script>
+  if (!requireStaff()) { /* redirect handled */ }
+  document.addEventListener('DOMContentLoaded', loadStaffDashboard);
+
+  async function loadStaffDashboard() {
+    try {
+      const data = await api('/staff/dashboard');
+      const stats = data.stats;
+
+      document.getElementById('statPending').textContent = stats.pending_verification ?? 0;
+      document.getElementById('statProcessing').textContent = stats.processing ?? 0;
+      document.getElementById('statShipped').textContent = stats.shipped ?? 0;
+      document.getElementById('statRevenue').textContent = formatPrice(stats.total_revenue ?? 0);
+      document.getElementById('statCancellation').textContent = stats.pending_cancellation ?? 0;
+
+      const container = document.getElementById('staffRecentOrders');
+      const orders = data.recentOrders || [];
+
+      if (orders.length === 0) {
+        container.innerHTML = `<div class="empty-state-sm"><i class="fas fa-inbox"></i><p>No orders yet</p></div>`;
+        return;
+      }
+
+      container.innerHTML = `
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Customer</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orders.map(o => `
+              <tr>
+                <td><strong>#${o.id}</strong></td>
+                <td>${escapeHtml(o.customer_name)}</td>
+                <td>${formatDate(o.created_at)}</td>
+                <td>${getStatusBadge(o.status)}</td>
+                <td><strong>${formatPrice(o.total_amount)}</strong></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (err) {
+      showToast(err.message || 'Failed to load dashboard', 'error');
+    }
+  }
+</script>

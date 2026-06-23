@@ -1,0 +1,244 @@
+<!-- Staff Cancellation Requests Page -->
+<div class="staff-page-header">
+  <div>
+    <h1>Cancellation Requests</h1>
+    <p>Review and process customer cancellation requests.</p>
+  </div>
+  <div style="display:flex; gap:10px; align-items:center;">
+    <select class="form-control" id="statusFilter" style="width:auto;" onchange="applyFilter()">
+      <option value="">All Requests</option>
+      <option value="pending">Pending</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+    </select>
+    <button class="btn btn-outline btn-sm" onclick="loadCancellations()">
+      <i class="fas fa-sync-alt"></i> Refresh
+    </button>
+  </div>
+</div>
+
+<!-- Summary chips -->
+<div id="summaryChips" style="display:flex; gap:12px; margin-bottom:24px; flex-wrap:wrap;"></div>
+
+<!-- Cancellations table panel -->
+<div class="staff-panel">
+  <div class="staff-panel-header">
+    <h2><i class="fas fa-ban" style="color:#F97316;margin-right:8px;"></i> Cancellation Queue</h2>
+    <span id="totalCount" style="font-size:0.85rem;color:var(--text-muted);"></span>
+  </div>
+  <div id="cancellationsList">
+    <div style="text-align:center;padding:48px;"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div id="cancellationModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center;">
+  <div class="staff-panel" style="max-width:560px; width:90%; max-height:85vh; overflow-y:auto; padding:0;">
+    <div class="staff-panel-header">
+      <h2 id="modalTitle">Cancellation Request</h2>
+      <button onclick="closeModal()" style="background:none;border:none;cursor:pointer;font-size:1.2rem;color:var(--text-muted);"><i class="fas fa-times"></i></button>
+    </div>
+    <div id="modalBody" style="padding:24px;"></div>
+    <div id="modalActions" style="padding:0 24px 24px; display:flex; gap:12px; justify-content:flex-end;"></div>
+  </div>
+</div>
+
+<script>
+  if (!requireStaff()) { /* redirect handled */ }
+
+  let allCancellations = [];
+  let currentFilter = '';
+
+  document.addEventListener('DOMContentLoaded', loadCancellations);
+
+  async function loadCancellations() {
+    try {
+      const data = await api('/staff/cancellations');
+      allCancellations = data.cancellations || data || [];
+      renderSummary();
+      renderTable(allCancellations);
+    } catch (err) {
+      document.getElementById('cancellationsList').innerHTML = `
+        <div class="empty-state-sm">
+          <i class="fas fa-exclamation-circle" style="color:var(--danger);"></i>
+          <p>Error: ${escapeHtml(err.message)}</p>
+          <button class="btn btn-outline btn-sm" onclick="loadCancellations()">Retry</button>
+        </div>`;
+    }
+  }
+
+  function renderSummary() {
+    const counts = { pending: 0, approved: 0, rejected: 0 };
+    allCancellations.forEach(c => { if (counts[c.status] !== undefined) counts[c.status]++; });
+    document.getElementById('summaryChips').innerHTML = [
+      { label: 'Pending', count: counts.pending, color: '#f59e0b' },
+      { label: 'Approved', count: counts.approved, color: '#10b981' },
+      { label: 'Rejected', count: counts.rejected, color: '#ef4444' },
+    ].map(chip => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-radius:999px;background:white;border:1px solid var(--border-light);cursor:pointer;transition:all 0.2s;"
+           onclick="setFilter('${chip.label.toLowerCase()}')" id="chip-${chip.label.toLowerCase()}">
+        <span style="width:8px;height:8px;border-radius:50%;background:${chip.color};display:inline-block;"></span>
+        <span style="font-weight:600;font-size:0.85rem;">${chip.label}</span>
+        <span style="background:${chip.color}22;color:${chip.color};border-radius:999px;padding:2px 8px;font-size:0.78rem;font-weight:700;">${chip.count}</span>
+      </div>`).join('');
+  }
+
+  function setFilter(val) {
+    currentFilter = currentFilter === val ? '' : val;
+    document.getElementById('statusFilter').value = currentFilter;
+    applyFilter();
+  }
+
+  function applyFilter() {
+    currentFilter = document.getElementById('statusFilter').value;
+    const filtered = currentFilter
+      ? allCancellations.filter(c => c.status === currentFilter)
+      : allCancellations;
+    renderTable(filtered);
+  }
+
+  function renderTable(list) {
+    const container = document.getElementById('cancellationsList');
+    document.getElementById('totalCount').textContent = `${list.length} request${list.length !== 1 ? 's' : ''}`;
+
+    if (!list.length) {
+      container.innerHTML = `<div class="empty-state-sm"><i class="fas fa-check-circle" style="color:var(--success);"></i><p>No cancellation requests found.</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Request ID</th>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th>Reason</th>
+              <th>Requested</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list.map(c => `
+              <tr>
+                <td><strong>#${c.id}</strong></td>
+                <td><a href="#" onclick="viewOrder(${c.order_id})" style="color:var(--accent);font-weight:600;">#${c.order_id}</a></td>
+                <td>${escapeHtml(c.customer_name || 'Unknown')}</td>
+                <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(c.reason || '')}">${escapeHtml(c.reason || '—')}</td>
+                <td>${formatDate(c.created_at)}</td>
+                <td>${getCancellationBadge(c.status)}</td>
+                <td>
+                  <div style="display:flex;gap:6px;">
+                    <button class="btn btn-outline btn-sm" onclick="openDetail(${c.id})">
+                      <i class="fas fa-eye"></i>
+                    </button>
+                    ${c.status === 'pending' ? `
+                      <button class="btn btn-primary btn-sm" onclick="handleDecision(${c.id}, 'approve')" style="background:var(--success);border-color:var(--success);">
+                        <i class="fas fa-check"></i>
+                      </button>
+                      <button class="btn btn-outline btn-sm" onclick="handleDecision(${c.id}, 'reject')" style="border-color:var(--danger);color:var(--danger);">
+                        <i class="fas fa-times"></i>
+                      </button>
+                    ` : ''}
+                  </div>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function getCancellationBadge(status) {
+    const map = {
+      pending: ['warning', 'Pending'],
+      approved: ['success', 'Approved'],
+      rejected: ['danger', 'Rejected'],
+    };
+    const [cls, label] = map[status] || ['secondary', status];
+    return `<span class="status-badge status-${cls}">${label}</span>`;
+  }
+
+  function openDetail(id) {
+    const c = allCancellations.find(x => x.id === id);
+    if (!c) return;
+
+    document.getElementById('modalTitle').textContent = `Cancellation Request #${c.id}`;
+    document.getElementById('modalBody').innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group" style="margin:0;">
+            <label>Order Number</label>
+            <div class="form-control" style="background:var(--bg-secondary);">#${c.order_id}</div>
+          </div>
+          <div class="form-group" style="margin:0;">
+            <label>Status</label>
+            <div style="padding:10px 14px;">${getCancellationBadge(c.status)}</div>
+          </div>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>Customer</label>
+          <div class="form-control" style="background:var(--bg-secondary);">${escapeHtml(c.customer_name || 'Unknown')}</div>
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label>Cancellation Reason</label>
+          <textarea class="form-control" rows="4" readonly style="background:var(--bg-secondary);">${escapeHtml(c.reason || 'No reason provided')}</textarea>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group" style="margin:0;">
+            <label>Requested On</label>
+            <div class="form-control" style="background:var(--bg-secondary);">${formatDate(c.created_at)}</div>
+          </div>
+          ${c.resolved_at ? `
+          <div class="form-group" style="margin:0;">
+            <label>Resolved On</label>
+            <div class="form-control" style="background:var(--bg-secondary);">${formatDate(c.resolved_at)}</div>
+          </div>` : ''}
+        </div>
+        ${c.staff_note ? `
+        <div class="form-group" style="margin:0;">
+          <label>Staff Note</label>
+          <div class="form-control" style="background:var(--bg-secondary);">${escapeHtml(c.staff_note)}</div>
+        </div>` : ''}
+      </div>`;
+
+    const actions = document.getElementById('modalActions');
+    if (c.status === 'pending') {
+      actions.innerHTML = `
+        <button class="btn btn-outline" onclick="closeModal()">Close</button>
+        <button class="btn btn-outline" onclick="handleDecision(${c.id}, 'reject')" style="border-color:var(--danger);color:var(--danger);">
+          <i class="fas fa-times"></i> Reject
+        </button>
+        <button class="btn btn-primary" onclick="handleDecision(${c.id}, 'approve')" style="background:var(--success);border-color:var(--success);">
+          <i class="fas fa-check"></i> Approve
+        </button>`;
+    } else {
+      actions.innerHTML = `<button class="btn btn-primary" onclick="closeModal()">Close</button>`;
+    }
+
+    document.getElementById('cancellationModal').style.display = 'flex';
+  }
+
+  function closeModal() {
+    document.getElementById('cancellationModal').style.display = 'none';
+  }
+
+  async function handleDecision(id, action) {
+    if (!confirm(`Are you sure you want to ${action} this cancellation request?`)) return;
+    try {
+      await api(`/staff/cancellations/${id}/${action}`, { method: 'POST' });
+      showToast(`Cancellation ${action === 'approve' ? 'approved' : 'rejected'} successfully!`, 'success');
+      closeModal();
+      await loadCancellations();
+    } catch (err) {
+      showToast(err.message || `Failed to ${action} cancellation`, 'error');
+    }
+  }
+
+  // Close modal on backdrop click
+  document.getElementById('cancellationModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+</script>

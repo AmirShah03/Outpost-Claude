@@ -35,7 +35,7 @@ const schemas = {
     card_number: Joi.string().pattern(/^\d{16}$/).required(),
     expiry_date: Joi.string().pattern(/^(0[1-9]|1[0-2])\/\d{2}$/).required(),
     cvv: Joi.string().pattern(/^\d{3,4}$/).required(),
-    cardholder_name: Joi.string().required(),
+    cardholder_name: Joi.string().optional(),
   }),
 
   updateProfile: Joi.object({

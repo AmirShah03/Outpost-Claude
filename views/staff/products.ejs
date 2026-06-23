@@ -1,0 +1,337 @@
+<div class="staff-page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+  <div>
+    <h1>Product Management</h1>
+    <p>Add, edit, and delete store products and variants.</p>
+  </div>
+  <button class="btn btn-primary" onclick="openProductModal()"><i class="fas fa-plus"></i> Add New Product</button>
+</div>
+
+<!-- Filters & Search -->
+<div class="staff-panel" style="margin-bottom: 24px;">
+  <div style="display: flex; gap: 16px; padding: 20px; align-items: center; flex-wrap: wrap;">
+    <div class="search-wrapper" style="flex: 1; min-width: 250px;">
+      <span class="search-icon"><i class="fas fa-search"></i></span>
+      <input type="text" id="searchProducts" class="form-control" placeholder="Search by product name..." oninput="loadProducts()">
+    </div>
+    <select id="categoryFilter" class="form-control" style="width: 200px;" onchange="loadProducts()">
+      <option value="">All Categories</option>
+    </select>
+  </div>
+</div>
+
+<!-- Products list -->
+<div class="staff-panel">
+  <div id="productsTableContainer"><div class="spinner-sm"></div></div>
+</div>
+
+<!-- Add/Edit Product Modal -->
+<div class="modal-overlay" id="productModalOverlay">
+  <div class="modal" id="productModal" style="max-width: 700px; width: 95%;">
+    <h2 id="modalTitle" style="margin-bottom: 20px; font-weight: 800;">Add New Product</h2>
+    <form id="productForm" onsubmit="saveProduct(event)">
+      <input type="hidden" id="productId">
+      
+      <div class="form-group">
+        <label for="prodName">Product Name</label>
+        <input type="text" id="prodName" class="form-control" required>
+      </div>
+
+      <div class="form-group">
+        <label for="prodDesc">Description</label>
+        <textarea id="prodDesc" class="form-control" required></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="prodCategory">Category</label>
+          <select id="prodCategory" class="form-control" required></select>
+        </div>
+        <div class="form-group">
+          <label for="prodImage">Product Image</label>
+          <input type="file" id="prodImage" class="form-control" accept="image/*" onchange="previewImage(event)">
+        </div>
+      </div>
+
+      <!-- Image Preview Area -->
+      <div id="imagePreviewContainer" style="margin-bottom: 20px; display: none;">
+        <label style="display:block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px;">Image Preview</label>
+        <img id="imagePreview" src="#" alt="Preview" style="max-height: 150px; border-radius: var(--radius-sm); border: 1px solid var(--border-light); object-fit: cover;">
+      </div>
+
+      <!-- Variants configuration -->
+      <div style="margin-top: 24px; margin-bottom: 20px; border-top: 1px solid var(--border-light); padding-top: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h3 style="font-size: 1.1rem; font-weight: 700;">Product Sizes & Pricing</h3>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="addVariantRow()"><i class="fas fa-plus"></i> Add Size Variant</button>
+        </div>
+        <div id="variantsContainer" style="display: flex; flex-direction: column; gap: 8px;">
+          <!-- Variant rows injected here -->
+        </div>
+      </div>
+
+      <div class="modal-actions" style="border-top: 1px solid var(--border-light); padding-top: 20px;">
+        <button type="button" class="btn btn-outline" onclick="closeProductModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveProductBtn">Save Product</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  if (!requireStaff()) {}
+  
+  let categories = [];
+  let allProducts = [];
+
+  document.addEventListener('DOMContentLoaded', async () => {
+    await loadCategoriesDropdown();
+    await loadProducts();
+  });
+
+  async function loadCategoriesDropdown() {
+    try {
+      categories = await api('/products/categories');
+      const filterSelect = document.getElementById('categoryFilter');
+      const formSelect = document.getElementById('prodCategory');
+      
+      categories.forEach(cat => {
+        const optFilter = document.createElement('option');
+        optFilter.value = cat.id;
+        optFilter.textContent = cat.name;
+        filterSelect.appendChild(optFilter);
+
+        const optForm = document.createElement('option');
+        optForm.value = cat.id;
+        optForm.textContent = cat.name;
+        formSelect.appendChild(optForm);
+      });
+    } catch (e) {
+      showToast('Failed to load categories', 'error');
+    }
+  }
+
+  async function loadProducts() {
+    const container = document.getElementById('productsTableContainer');
+    const search = document.getElementById('searchProducts').value;
+    const catId = document.getElementById('categoryFilter').value;
+
+    let queryParams = [];
+    if (search) queryParams.push(`search=${encodeURIComponent(search)}`);
+    if (catId) queryParams.push(`category_id=${catId}`);
+    queryParams.push('limit=100');
+
+    const queryString = queryParams.length ? '?' + queryParams.join('&') : '';
+    
+    try {
+      const data = await api(`/products${queryString}`);
+      allProducts = data.products || [];
+      renderTable(allProducts);
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state-sm"><p style="color:var(--danger)">${escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  function renderTable(products) {
+    const container = document.getElementById('productsTableContainer');
+    if (!products || products.length === 0) {
+      container.innerHTML = `<div class="empty-state-sm"><i class="fas fa-inbox"></i><p>No products found.</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="overflow-x: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Image</th>
+              <th>Product ID</th>
+              <th>Product Name</th>
+              <th>Category</th>
+              <th>Price Range</th>
+              <th>Stock</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${products.map(p => {
+              const imageSrc = p.image_url || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23f1f5f9"/><text x="50" y="55" font-family="sans-serif" font-size="12" fill="%2394a3b8" text-anchor="middle">No Image</text></svg>';
+              
+              const priceDisplay = p.min_price === p.max_price
+                ? formatPrice(p.min_price || 0)
+                : `${formatPrice(p.min_price || 0)} - ${formatPrice(p.max_price || 0)}`;
+
+              return `
+                <tr>
+                  <td><img src="${imageSrc}" style="width: 44px; height: 44px; object-fit: cover; border-radius: var(--radius-sm); border: 1px solid var(--border-light);" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=&quot;http://www.w3.org/2000/svg&quot; width=&quot;40&quot; height=&quot;40&quot; viewBox=&quot;0 0 100 100&quot;><rect width=&quot;100&quot; height=&quot;100&quot; fill=&quot;%23f1f5f9&quot;/><text x=&quot;50&quot; y=&quot;55&quot; font-family=&quot;sans-serif&quot; font-size=&quot;12&quot; fill=&quot;%2394a3b8&quot; text-anchor=&quot;middle&quot;>No Image</text></svg>'"></td>
+                  <td><strong>#${p.id}</strong></td>
+                  <td><strong>${escapeHtml(p.name)}</strong></td>
+                  <td><span class="badge badge-processing">${escapeHtml(p.category_name || 'General')}</span></td>
+                  <td><strong>${priceDisplay}</strong></td>
+                  <td>${p.total_stock ?? 0} items</td>
+                  <td style="white-space: nowrap;">
+                    <button class="btn btn-sm btn-outline" onclick="editProduct(${p.id})"><i class="fas fa-pencil"></i> Edit</button>
+                    <button class="btn btn-sm" style="background:#FEE2E2; color:#DC2626;" onclick="deleteProduct(${p.id})"><i class="fas fa-trash"></i></button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  // Modal actions
+  function openProductModal(prod = null) {
+    const modalTitle = document.getElementById('modalTitle');
+    const form = document.getElementById('productForm');
+    
+    document.getElementById('productId').value = prod ? prod.id : '';
+    document.getElementById('prodName').value = prod ? prod.name : '';
+    document.getElementById('prodDesc').value = prod ? prod.description : '';
+    document.getElementById('prodCategory').value = prod ? prod.category_id : (categories[0]?.id || '');
+    document.getElementById('prodImage').value = '';
+    
+    const previewContainer = document.getElementById('imagePreviewContainer');
+    const previewImg = document.getElementById('imagePreview');
+    if (prod && prod.image_url) {
+      previewImg.src = prod.image_url;
+      previewContainer.style.display = 'block';
+    } else {
+      previewContainer.style.display = 'none';
+      previewImg.src = '#';
+    }
+
+    const variantsContainer = document.getElementById('variantsContainer');
+    variantsContainer.innerHTML = '';
+    
+    if (prod && prod.variants && prod.variants.length > 0) {
+      prod.variants.forEach(v => addVariantRow(v.size, v.price, v.stock_quantity));
+    } else {
+      // Default standard variant size sizes
+      addVariantRow('S', 29.99, 50);
+      addVariantRow('M', 29.99, 50);
+      addVariantRow('L', 29.99, 50);
+    }
+
+    modalTitle.textContent = prod ? 'Edit Product' : 'Add New Product';
+    document.getElementById('productModalOverlay').classList.add('active');
+  }
+
+  function closeProductModal() {
+    document.getElementById('productModalOverlay').classList.remove('active');
+  }
+
+  function previewImage(event) {
+    const input = event.target;
+    if (input.files && input.files[0]) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const previewImg = document.getElementById('imagePreview');
+        previewImg.src = e.target.result;
+        document.getElementById('imagePreviewContainer').style.display = 'block';
+      };
+      reader.readAsDataURL(input.files[0]);
+    }
+  }
+
+  function addVariantRow(size = '', price = '', stock = '') {
+    const container = document.getElementById('variantsContainer');
+    const div = document.createElement('div');
+    div.className = 'variant-row';
+    div.style.display = 'flex';
+    div.style.gap = '8px';
+    div.style.alignItems = 'center';
+    
+    div.innerHTML = `
+      <input type="text" class="form-control var-size" placeholder="Size (e.g. S, M, XL, 32)" value="${escapeHtml(String(size))}" required style="flex: 2;">
+      <input type="number" step="0.01" min="0" class="form-control var-price" placeholder="Price (e.g. 29.99)" value="${price}" required style="flex: 2;">
+      <input type="number" min="0" class="form-control var-stock" placeholder="Stock Qty" value="${stock}" required style="flex: 1;">
+      <button type="button" class="btn btn-sm" style="background:#FEE2E2; color:#DC2626; padding: 10px 14px;" onclick="this.parentElement.remove()"><i class="fas fa-times"></i></button>
+    `;
+    container.appendChild(div);
+  }
+
+  async function editProduct(productId) {
+    try {
+      const prod = await api(`/products/${productId}`);
+      if (prod) openProductModal(prod);
+    } catch (err) {
+      showToast('Failed to load product details', 'error');
+    }
+  }
+
+  async function deleteProduct(productId) {
+    if (!confirm('Are you sure you want to delete this product? It will be removed from the catalog.')) return;
+    try {
+      await api(`/products/${productId}`, { method: 'DELETE' });
+      showToast('Product successfully deleted', 'success');
+      loadProducts();
+    } catch (err) {
+      showToast(err.message || 'Failed to delete product', 'error');
+    }
+  }
+
+  async function saveProduct(event) {
+    event.preventDefault();
+    const saveBtn = document.getElementById('saveProductBtn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    const productId = document.getElementById('productId').value;
+    const name = document.getElementById('prodName').value;
+    const description = document.getElementById('prodDesc').value;
+    const category_id = document.getElementById('prodCategory').value;
+    
+    // Gather variants
+    const variantRows = document.querySelectorAll('#variantsContainer .variant-row');
+    const variants = [];
+    variantRows.forEach(row => {
+      const size = row.querySelector('.var-size').value;
+      const price = parseFloat(row.querySelector('.var-price').value);
+      const stock_quantity = parseInt(row.querySelector('.var-stock').value);
+      variants.push({ size, price, stock_quantity });
+    });
+
+    if (variants.length === 0) {
+      showToast('You must add at least one variant size.', 'warning');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Product';
+      return;
+    }
+
+    const fileInput = document.getElementById('prodImage');
+    const formData = new FormData();
+    formData.append('name', name);
+    formData.append('description', description);
+    formData.append('category_id', category_id);
+    formData.append('variants', JSON.stringify(variants));
+    
+    if (fileInput.files.length > 0) {
+      formData.append('image', fileInput.files[0]);
+    }
+
+    const url = productId ? `/products/${productId}` : '/products';
+    const method = productId ? 'PUT' : 'POST';
+
+    try {
+      await api(url, {
+        method: method,
+        body: formData
+      });
+
+      showToast(productId ? 'Product updated successfully!' : 'Product added successfully!', 'success');
+      closeProductModal();
+      loadProducts();
+    } catch (err) {
+      showToast(err.message || 'Failed to save product', 'error');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Product';
+    }
+  }
+
+  document.getElementById('productModalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeProductModal();
+  });
+</script>

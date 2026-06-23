@@ -1,0 +1,8 @@
+<div class="error-page animate-in">
+  <h1><%= typeof status !== 'undefined' ? status : '500' %></h1>
+  <h2 style="margin-bottom: 16px; font-weight: 600;"><%= typeof message !== 'undefined' ? message : 'An unexpected error occurred' %></h2>
+  <p style="color: var(--text-secondary); margin-bottom: 32px; max-width: 480px; margin-left: auto; margin-right: auto;">
+    We apologize for the inconvenience. Please try again or return to the main catalog to explore our premium products.
+  </p>
+  <a href="/catalog" class="btn btn-primary">Back to Catalog</a>
+</div>

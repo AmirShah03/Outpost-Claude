@@ -105,4 +105,118 @@ const getCategories = async () => {
   return result.rows;
 };
 
-module.exports = { getProducts, getProductById, getCategories };
+const createProduct = async ({ name, description, category_id, image_url, variants = [] }) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Insert product
+    const productResult = await client.query(
+      `INSERT INTO products (name, description, category_id, image_url, is_active)
+       VALUES ($1, $2, $3, $4, true)
+       RETURNING *`,
+      [name, description, category_id, image_url]
+    );
+    const product = productResult.rows[0];
+
+    // 2. Insert variants
+    if (variants && variants.length > 0) {
+      for (const variant of variants) {
+        await client.query(
+          `INSERT INTO product_variants (product_id, size, price, stock_quantity)
+           VALUES ($1, $2, $3, $4)`,
+          [product.id, variant.size, parseFloat(variant.price), parseInt(variant.stock_quantity)]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return getProductById(product.id);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const updateProduct = async (id, { name, description, category_id, image_url, variants = [] }) => {
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Update product details
+    const updateFields = [];
+    const params = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updateFields.push(`name = $${paramIndex}`);
+      params.push(name);
+      paramIndex++;
+    }
+    if (description !== undefined) {
+      updateFields.push(`description = $${paramIndex}`);
+      params.push(description);
+      paramIndex++;
+    }
+    if (category_id !== undefined) {
+      updateFields.push(`category_id = $${paramIndex}`);
+      params.push(category_id);
+      paramIndex++;
+    }
+    if (image_url !== undefined) {
+      updateFields.push(`image_url = $${paramIndex}`);
+      params.push(image_url);
+      paramIndex++;
+    }
+
+    if (updateFields.length > 0) {
+      params.push(id);
+      await client.query(
+        `UPDATE products SET ${updateFields.join(', ')} WHERE id = $${paramIndex}`,
+        params
+      );
+    }
+
+    // 2. Re-create variants if provided
+    if (variants && variants.length > 0) {
+      // Clear old variants
+      await client.query('DELETE FROM product_variants WHERE product_id = $1', [id]);
+      
+      // Insert new variants
+      for (const variant of variants) {
+        await client.query(
+          `INSERT INTO product_variants (product_id, size, price, stock_quantity)
+           VALUES ($1, $2, $3, $4)`,
+          [id, variant.size, parseFloat(variant.price), parseInt(variant.stock_quantity)]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    return getProductById(id);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+const deleteProduct = async (id) => {
+  await db.query(
+    'UPDATE products SET is_active = false WHERE id = $1',
+    [id]
+  );
+  return { success: true };
+};
+
+module.exports = { 
+  getProducts, 
+  getProductById, 
+  getCategories, 
+  createProduct, 
+  updateProduct, 
+  deleteProduct 
+};

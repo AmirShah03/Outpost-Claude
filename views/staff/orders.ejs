@@ -1,0 +1,232 @@
+<div class="staff-page-header">
+  <div>
+    <h1>Manage Orders</h1>
+    <p>View, filter, and update all customer orders.</p>
+  </div>
+  <button class="btn btn-outline" onclick="loadOrders()"><i class="fas fa-sync-alt"></i> Refresh</button>
+</div>
+
+<!-- Filters -->
+<div class="staff-panel" style="margin-bottom: 24px;">
+  <div style="display: flex; gap: 12px; flex-wrap: wrap; padding: 20px; align-items: flex-end;">
+    <div class="filter-group">
+      <label>Payment Status</label>
+      <select id="filterPayment" class="form-control" onchange="loadOrders()">
+        <option value="">All</option>
+        <option value="pending">Pending</option>
+        <option value="pending_verification">Pending Verification</option>
+        <option value="processing">Paid / Processing</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Order Status</label>
+      <select id="filterStatus" class="form-control" onchange="loadOrders()">
+        <option value="">All</option>
+        <option value="pending">Pending</option>
+        <option value="pending_verification">Pending Verification</option>
+        <option value="processing">Processing</option>
+        <option value="shipped">Shipped</option>
+        <option value="delivered">Delivered</option>
+        <option value="cancelled">Cancelled</option>
+        <option value="pending_cancellation">Pending Cancellation</option>
+      </select>
+    </div>
+    <div class="filter-group" style="flex: 1;">
+      <label>Search by Order ID or Customer</label>
+      <input type="text" id="searchOrders" class="form-control" placeholder="e.g. #42 or John..." oninput="filterTable()">
+    </div>
+  </div>
+</div>
+
+<!-- Orders Table -->
+<div class="staff-panel">
+  <div id="ordersTableContainer"><div class="spinner-sm"></div></div>
+</div>
+
+<!-- Ship Order Modal -->
+<div class="modal-overlay" id="shipModalOverlay">
+  <div class="modal" id="shipModal">
+    <h3 style="margin-bottom: 16px;">Mark as Shipped</h3>
+    <input type="hidden" id="shipOrderId">
+    <div class="form-group">
+      <label for="trackingId">Tracking ID</label>
+      <input type="text" id="trackingId" class="form-control" placeholder="e.g. MY123456789" required>
+    </div>
+    <div class="form-group">
+      <label for="expectedDelivery">Expected Delivery Date</label>
+      <input type="date" id="expectedDelivery" class="form-control">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeShipModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitShipOrder()"><i class="fas fa-truck"></i> Mark as Shipped</button>
+    </div>
+  </div>
+</div>
+
+<!-- Verify Payment Modal -->
+<div class="modal-overlay" id="verifyModalOverlay">
+  <div class="modal" id="verifyModal" style="max-width: 600px;">
+    <h3 style="margin-bottom: 16px;">Verify Payment</h3>
+    <div id="verifyOrderInfo"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeVerifyModal()">Close</button>
+      <button class="btn btn-danger" onclick="rejectPaymentAction()" style="background: #EF4444; color: #fff;"><i class="fas fa-times"></i> Reject</button>
+      <button class="btn btn-success" onclick="approvePaymentAction()"><i class="fas fa-check"></i> Approve Payment</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  if (!requireStaff()) {}
+  let allOrders = [];
+  let currentVerifyOrderId = null;
+
+  document.addEventListener('DOMContentLoaded', loadOrders);
+
+  async function loadOrders() {
+    const container = document.getElementById('ordersTableContainer');
+    container.innerHTML = '<div class="spinner-sm"></div>';
+    try {
+      const status = document.getElementById('filterStatus').value;
+      const queryParams = status ? `?status=${encodeURIComponent(status)}&limit=100` : '?limit=100';
+      const data = await api('/staff/orders' + queryParams);
+      allOrders = data.orders || [];
+      renderTable(allOrders);
+    } catch (err) {
+      container.innerHTML = `<div class="empty-state-sm"><i class="fas fa-exclamation-circle"></i><p>${escapeHtml(err.message)}</p></div>`;
+    }
+  }
+
+  function filterTable() {
+    const q = document.getElementById('searchOrders').value.toLowerCase();
+    const filtered = allOrders.filter(o =>
+      String(o.id).includes(q) ||
+      (o.customer_name || '').toLowerCase().includes(q) ||
+      (o.customer_email || '').toLowerCase().includes(q)
+    );
+    renderTable(filtered);
+  }
+
+  function renderTable(orders) {
+    const container = document.getElementById('ordersTableContainer');
+    if (!orders || orders.length === 0) {
+      container.innerHTML = `<div class="empty-state-sm"><i class="fas fa-inbox"></i><p>No orders found.</p></div>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div style="overflow-x: auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Customer</th>
+              <th>Date</th>
+              <th>Amount</th>
+              <th>Payment</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orders.map(o => {
+              const paymentBadge = o.payment_method === 'card'
+                ? '<span class="badge badge-processing">💳 Card</span>'
+                : '<span class="badge badge-pending_verification">🏦 Banking</span>';
+              
+              let actions = '';
+              if (o.status === 'pending_verification') {
+                actions += `<button class="btn btn-sm btn-outline" onclick="openVerifyModal(${o.id}, '${escapeHtml(o.customer_name || '')}', ${o.total_amount})"><i class="fas fa-check-circle"></i> Verify</button> `;
+              }
+              if (o.status === 'processing') {
+                actions += `<button class="btn btn-sm btn-primary" onclick="openShipModal(${o.id})"><i class="fas fa-truck"></i> Ship</button> `;
+              }
+
+              return `
+                <tr>
+                  <td><strong>#${o.id}</strong></td>
+                  <td>${escapeHtml(o.customer_name || o.customer_email || '—')}</td>
+                  <td>${formatDate(o.created_at)}</td>
+                  <td><strong>${formatPrice(o.total_amount)}</strong></td>
+                  <td>${paymentBadge}</td>
+                  <td>${getStatusBadge(o.status)}</td>
+                  <td style="white-space: nowrap;">${actions || '<span style="color: var(--text-muted); font-size: 0.8rem;">—</span>'}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  // Ship Modal
+  function openShipModal(orderId) {
+    document.getElementById('shipOrderId').value = orderId;
+    document.getElementById('trackingId').value = '';
+    document.getElementById('expectedDelivery').value = '';
+    document.getElementById('shipModalOverlay').classList.add('active');
+  }
+  function closeShipModal() {
+    document.getElementById('shipModalOverlay').classList.remove('active');
+  }
+  async function submitShipOrder() {
+    const orderId = document.getElementById('shipOrderId').value;
+    const tracking_id = document.getElementById('trackingId').value.trim();
+    const expected_delivery = document.getElementById('expectedDelivery').value;
+    if (!tracking_id) { showToast('Tracking ID is required', 'warning'); return; }
+    try {
+      await api(`/staff/orders/${orderId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ tracking_id, expected_delivery })
+      });
+      showToast('Order marked as Shipped!', 'success');
+      closeShipModal();
+      loadOrders();
+    } catch (err) {
+      showToast(err.message || 'Failed to update order', 'error');
+    }
+  }
+
+  // Verify Payment Modal
+  function openVerifyModal(orderId, customerName, totalAmount) {
+    currentVerifyOrderId = orderId;
+    document.getElementById('verifyOrderInfo').innerHTML = `
+      <div class="info-card" style="margin-bottom: 16px; padding: 16px; background: #F8FAFC; border-radius: 8px; border: 1px solid #E2E8F0;">
+        <p><strong>Order:</strong> #${orderId}</p>
+        <p><strong>Customer:</strong> ${escapeHtml(customerName)}</p>
+        <p><strong>Amount:</strong> <span style="color: #F97316; font-weight: 700;">${formatPrice(totalAmount)}</span></p>
+      </div>
+      <p style="color: var(--text-secondary); font-size: 0.9rem;">Approve to confirm payment has been received and move order to Processing.</p>
+    `;
+    document.getElementById('verifyModalOverlay').classList.add('active');
+  }
+  function closeVerifyModal() {
+    document.getElementById('verifyModalOverlay').classList.remove('active');
+    currentVerifyOrderId = null;
+  }
+  async function approvePaymentAction() {
+    if (!currentVerifyOrderId) return;
+    try {
+      await api(`/staff/orders/${currentVerifyOrderId}/verify`, { method: 'POST' });
+      showToast('Payment approved! Order moved to Processing.', 'success');
+      closeVerifyModal();
+      loadOrders();
+    } catch (err) {
+      showToast(err.message || 'Failed to approve payment', 'error');
+    }
+  }
+  async function rejectPaymentAction() {
+    if (!currentVerifyOrderId) return;
+    if (!confirm('Reject this payment? The order will remain pending.')) return;
+    showToast('Payment rejected. Customer should re-upload receipt.', 'info');
+    closeVerifyModal();
+  }
+
+  document.getElementById('shipModalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeShipModal();
+  });
+  document.getElementById('verifyModalOverlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeVerifyModal();
+  });
+</script>

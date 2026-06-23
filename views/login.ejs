@@ -1,0 +1,130 @@
+<div class="auth-page">
+  <div class="auth-card glass-card animate-in">
+    <h1 id="authTitle">Sign In</h1>
+    <p class="subtitle" id="authSubtitle">Access your premium shopping account</p>
+
+    <div class="auth-tabs">
+      <a href="#" id="tab-login" class="active" onclick="switchTab('login')">Sign In</a>
+      <a href="#" id="tab-register" onclick="switchTab('register')">Register</a>
+    </div>
+
+    <!-- Login Form -->
+    <form id="loginForm" onsubmit="handleLoginSubmit(event)">
+      <div class="form-group">
+        <label for="loginEmail">Email Address</label>
+        <input type="email" id="loginEmail" class="form-control" placeholder="name@example.com" required>
+      </div>
+      <div class="form-group">
+        <label for="loginPassword">Password</label>
+        <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" style="margin-top: 24px;">Sign In</button>
+    </form>
+
+    <!-- Register Form (hidden by default) -->
+    <form id="registerForm" onsubmit="handleRegisterSubmit(event)" style="display: none;">
+      <div class="form-group">
+        <label for="registerName">Full Name</label>
+        <input type="text" id="registerName" class="form-control" placeholder="John Doe" required>
+      </div>
+      <div class="form-group">
+        <label for="registerEmail">Email Address</label>
+        <input type="email" id="registerEmail" class="form-control" placeholder="john@example.com" required>
+      </div>
+      <div class="form-group">
+        <label for="registerPassword">Password</label>
+        <input type="password" id="registerPassword" class="form-control" placeholder="Minimum 6 characters" minlength="6" required>
+      </div>
+      <div class="form-group">
+        <label for="registerPhone">Phone Number</label>
+        <input type="tel" id="registerPhone" class="form-control" placeholder="+60123456789">
+      </div>
+      <div class="form-group">
+        <label for="registerAddress">Delivery Address</label>
+        <textarea id="registerAddress" class="form-control" placeholder="Your standard shipping address..."></textarea>
+      </div>
+      <button type="submit" class="btn btn-primary btn-block" style="margin-top: 24px;">Create Account</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Redirect logged in users away from login page
+  if (isLoggedIn()) {
+    window.location.href = isStaff() ? '/staff' : '/';
+  }
+
+  function switchTab(mode) {
+    const loginForm = document.getElementById('loginForm');
+    const registerForm = document.getElementById('registerForm');
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const authTitle = document.getElementById('authTitle');
+    const authSubtitle = document.getElementById('authSubtitle');
+
+    if (mode === 'login') {
+      loginForm.style.display = 'block';
+      registerForm.style.display = 'none';
+      tabLogin.classList.add('active');
+      tabRegister.classList.remove('active');
+      authTitle.textContent = 'Sign In';
+      authSubtitle.textContent = 'Access your premium shopping account';
+    } else {
+      loginForm.style.display = 'none';
+      registerForm.style.display = 'block';
+      tabLogin.classList.remove('active');
+      tabRegister.classList.add('active');
+      authTitle.textContent = 'Create Account';
+      authSubtitle.textContent = 'Join the premium OutpostClaude platform';
+    }
+  }
+
+  async function handleLoginSubmit(event) {
+    event.preventDefault();
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+
+    try {
+      const data = await api('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      });
+
+      if (data && data.user) {
+        setUser(data.user);
+        showToast('Welcome back, ' + data.user.name + '!', 'success');
+        setTimeout(() => {
+          window.location.href = data.user.role === 'staff' ? '/staff' : '/';
+        }, 1000);
+      }
+    } catch (err) {
+      showToast(err.message || 'Login failed', 'error');
+    }
+  }
+
+  async function handleRegisterSubmit(event) {
+    event.preventDefault();
+    const name = document.getElementById('registerName').value;
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    const phone = document.getElementById('registerPhone').value;
+    const address = document.getElementById('registerAddress').value;
+
+    try {
+      const data = await api('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, password, phone, address })
+      });
+
+      if (data && data.user) {
+        setUser(data.user);
+        showToast('Registration successful! Welcome, ' + data.user.name + '.', 'success');
+        setTimeout(() => {
+          window.location.href = '/';
+        }, 1000);
+      }
+    } catch (err) {
+      showToast(err.message || 'Registration failed', 'error');
+    }
+  }
+</script>

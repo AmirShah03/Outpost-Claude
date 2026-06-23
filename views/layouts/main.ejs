@@ -3,54 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="OutpostClaude - Premium E-Commerce Platform">
-  <title><%= typeof title !== 'undefined' ? title + ' | OutpostClaude' : 'OutpostClaude' %></title>
+  <meta name="description" content="Outpost Shah Alam E-Retail System - Premium NextMerce Retail">
+  <title><%= typeof title !== 'undefined' ? title + ' | Outpost Shah Alam' : 'Outpost Shah Alam' %></title>
   <link rel="stylesheet" href="/css/styles.css">
+  <!-- Font Awesome: deferred so it never blocks page paint -->
+  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" media="print" onload="this.media='all'">
+  <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"></noscript>
 </head>
 <body>
-  <!-- Navbar -->
-  <nav class="navbar">
-    <div class="container">
-      <a href="/" class="nav-brand">
-        <span class="logo-icon">⚡</span>
-        OutpostClaude
-      </a>
 
-      <button class="nav-toggle" onclick="document.querySelector('.nav-links').classList.toggle('open')" aria-label="Toggle navigation">☰</button>
+  <!-- Sticky Navbar — hidden on staff portal pages -->
+  <% const isStaffPage = (typeof title !== 'undefined' && (title.includes('Staff') || title.includes('Manage') || title.includes('Reports') || title.includes('Cancellation'))); %>
+  <% if (!isStaffPage) { %>
+    <nav class="navbar">
+      <div class="container">
+        <a href="/" class="nav-brand">
+          <span class="logo-icon"><i class="fas fa-bolt"></i></span>
+          Outpost Shah Alam
+        </a>
 
-      <ul class="nav-links" id="navLinks">
-        <li><a href="/" id="nav-catalog">🛍️ Catalog</a></li>
-        <li class="nav-auth-hide" style="display:none;">
-          <a href="/cart" id="nav-cart" class="nav-cart">
-            🛒 Cart
-            <span class="cart-badge" id="cartBadge">0</span>
-          </a>
-        </li>
-        <li class="nav-auth-hide" style="display:none;">
-          <a href="/orders" id="nav-orders">📦 Orders</a>
-        </li>
-        <li class="nav-auth-hide" style="display:none;">
-          <a href="/profile" id="nav-profile">👤 Profile</a>
-        </li>
-        <!-- Staff links -->
-        <li class="nav-staff-hide" style="display:none;">
-          <a href="/staff" id="nav-staff-dashboard">📊 Dashboard</a>
-        </li>
-        <li class="nav-staff-hide" style="display:none;">
-          <a href="/staff/orders" id="nav-staff-orders">📋 Manage Orders</a>
-        </li>
-        <li class="nav-staff-hide" style="display:none;">
-          <a href="/staff/reports" id="nav-staff-reports">📈 Reports</a>
-        </li>
-      </ul>
+        <button class="nav-toggle" onclick="document.getElementById('navLinks').classList.toggle('open')" aria-label="Toggle navigation">
+          <i class="fas fa-bars"></i>
+        </button>
 
-      <div class="nav-user">
-        <span class="user-name" id="navUserName" style="display:none;"></span>
-        <a href="/login" class="btn btn-primary btn-sm" id="navLoginBtn">Sign In</a>
-        <button class="btn btn-secondary btn-sm" id="navLogoutBtn" style="display:none;" onclick="handleLogout()">Logout</button>
+        <ul class="nav-links" id="navLinks">
+          <li><a href="/" id="nav-home"><i class="fas fa-home"></i> Home</a></li>
+          <li><a href="/catalog" id="nav-catalog"><i class="fas fa-store"></i> Shop</a></li>
+          <li class="nav-auth-hide" style="display:none;">
+            <a href="/cart" id="nav-cart" class="nav-cart">
+              <i class="fas fa-shopping-cart"></i> Cart
+              <span class="cart-badge" id="cartBadge">0</span>
+            </a>
+          </li>
+          <li class="nav-auth-hide" style="display:none;">
+            <a href="/orders" id="nav-orders"><i class="fas fa-box"></i> My Orders</a>
+          </li>
+          <li class="nav-auth-hide" style="display:none;">
+            <a href="/profile" id="nav-profile"><i class="fas fa-user-circle"></i> My Account</a>
+          </li>
+          <li class="nav-staff-hide" style="display:none;">
+            <a href="/staff" id="nav-staff-dashboard"><i class="fas fa-chart-line"></i> Staff Dashboard</a>
+          </li>
+        </ul>
+
+        <div class="nav-user">
+          <span class="user-name" id="navUserName" style="display:none;"></span>
+          <a href="/login" class="btn btn-primary btn-sm" id="navLoginBtn"><i class="fas fa-sign-in-alt"></i> Sign In</a>
+          <button class="btn btn-secondary btn-sm" id="navLogoutBtn" style="display:none;" onclick="handleLogout()"><i class="fas fa-sign-out-alt"></i> Logout</button>
+        </div>
       </div>
-    </div>
-  </nav>
+    </nav>
+  <% } %>
 
   <!-- Toast Container -->
   <div class="toast-container" id="toastContainer"></div>
@@ -60,17 +64,95 @@
     <div class="modal" id="modalContent"></div>
   </div>
 
-  <!-- Page Content -->
-  <main class="page-content">
-    <div class="container">
-      <%- body %>
+  <!-- Body Content -->
+  <% if (isStaffPage) { %>
+    <!-- Staff layout with persistent sidebar -->
+    <div class="staff-layout">
+      <aside class="staff-sidebar">
+        <div class="staff-sidebar-brand">
+          <i class="fas fa-bolt"></i> Outpost Staff
+        </div>
+        <ul class="staff-nav">
+          <li><a href="/staff" class="<%= title === 'Staff Dashboard' ? 'active' : '' %>"><i class="fas fa-chart-pie"></i> Dashboard</a></li>
+          <li><a href="/staff/orders" class="<%= title === 'Manage Orders' ? 'active' : '' %>"><i class="fas fa-receipt"></i> Manage Orders</a></li>
+          <li><a href="/staff/cancellations" class="<%= title === 'Cancellation Requests' ? 'active' : '' %>"><i class="fas fa-ban"></i> Cancellations</a></li>
+          <li><a href="/staff/products" class="<%= title === 'Manage Products' ? 'active' : '' %>"><i class="fas fa-box"></i> Manage Products</a></li>
+          <li><a href="/staff/reports" class="<%= title === 'Sales Reports' ? 'active' : '' %>"><i class="fas fa-file-chart-column"></i> Reports</a></li>
+          <li style="margin-top: auto;"><a href="#" onclick="handleLogout()"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+        </ul>
+      </aside>
+      <main class="staff-content">
+        <%- body %>
+      </main>
     </div>
-  </main>
+  <% } else { %>
+    <!-- Customer layout -->
+    <main class="page-content">
+      <% if (typeof title !== 'undefined' && title === 'Home') { %>
+        <!-- Landing page takes full width -->
+        <%- body %>
+      <% } else { %>
+        <div class="container">
+          <%- body %>
+        </div>
+      <% } %>
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+      <div class="container">
+        <div class="footer-grid">
+          <div class="footer-column">
+            <h2 style="font-family: var(--font-heading); font-weight: 800; font-size: 1.4rem; margin-bottom: 16px;">
+              <span style="color: var(--accent);"><i class="fas fa-bolt"></i></span> Outpost Shah Alam
+            </h2>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 16px;">
+              Shah Alam's leading premium e-retail platform. Powered by NextMerce high-scale technology.
+            </p>
+          </div>
+          <div class="footer-column">
+            <h3>Shop</h3>
+            <ul>
+              <li><a href="/catalog">All Products</a></li>
+              <li><a href="/catalog?category_id=1">T-Shirts</a></li>
+              <li><a href="/catalog?category_id=2">Hoodies</a></li>
+              <li><a href="/catalog?category_id=4">Shoes</a></li>
+            </ul>
+          </div>
+          <div class="footer-column">
+            <h3>Support</h3>
+            <ul>
+              <li><a href="#">Contact Us</a></li>
+              <li><a href="#">Shipping Policy</a></li>
+              <li><a href="#">Returns & Refunds</a></li>
+              <li><a href="#">FAQ</a></li>
+            </ul>
+          </div>
+          <div class="footer-column">
+            <h3>Company</h3>
+            <ul>
+              <li><a href="#">About NextMerce</a></li>
+              <li><a href="#">Careers</a></li>
+              <li><a href="#">Privacy Policy</a></li>
+              <li><a href="#">Terms of Service</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <span>&copy; 2026 Outpost Shah Alam E-Retail System. All rights reserved.</span>
+          <div style="display: flex; gap: 16px;">
+            <a href="#" aria-label="Facebook"><i class="fab fa-facebook-f"></i></a>
+            <a href="#" aria-label="Twitter"><i class="fab fa-twitter"></i></a>
+            <a href="#" aria-label="Instagram"><i class="fab fa-instagram"></i></a>
+          </div>
+        </div>
+      </div>
+    </footer>
+  <% } %>
 
   <!-- Core JS -->
   <script src="/js/api.js"></script>
   <script>
-    // Initialize navbar state on load
     document.addEventListener('DOMContentLoaded', () => {
       updateNavbar();
       updateCartBadge();
