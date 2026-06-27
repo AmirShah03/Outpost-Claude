@@ -1,0 +1,50 @@
+services:
+  dev-env:
+    # 1. Build configuration
+    build:
+      context: .
+      dockerfile: Dockerfile.devenv
+    
+    # 2. Name your image and container
+    image: nodejs-dev-env
+    container_name: nodejs_workspace
+    
+    # 3. Mount your Windows filesystem to the container
+    volumes:
+      - ./:/app
+      # Pro-tip: Uncomment the line below if you want the container's node_modules 
+      # to be isolated from your Windows host's node_modules.
+      # - /app/node_modules
+    
+    # 4. Map ports so you can access your web servers via localhost on Windows
+    ports:
+      - "3000:3000"
+      - "8080:8080"
+    
+    # 5. Keep the terminal active and the container running
+    tty: true
+    
+    # 6. Set helpful environment variables
+    environment:
+      - NODE_ENV=development
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: outpost_user
+      POSTGRES_PASSWORD: outpost_pass
+      POSTGRES_DB: outpost_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./src/db/migrations/001_initial_schema.sql:/docker-entrypoint-initdb.d/001_initial_schema.sql
+      - ./src/db/seed.sql:/docker-entrypoint-initdb.d/zzz_seed.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U outpost_user -d outpost_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

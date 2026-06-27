@@ -1,0 +1,19 @@
+{
+  "name": "Node.js Workspace",
+  "dockerComposeFile": "../docker-compose-dev-env.yml",
+  "service": "dev-env",
+  "workspaceFolder": "/app",
+  "remoteUser": "developer",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+        // Add any other extensions you want pre-installed in the container here
+      ]
+    }
+  }
+}
