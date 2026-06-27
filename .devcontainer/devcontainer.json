@@ -4,7 +4,7 @@
   "service": "dev-env",
   "workspaceFolder": "/app",
   "remoteUser": "developer",
-  "postCreateCommand": "sudo chown -R 1000:1000 /app && sudo chmod -R 755 /app && npm install && git config --global --add safe.directory /app && git config core.filemode false",
+  "postCreateCommand": "sudo chown -R 1000:1000 /app && sudo chmod -R 755 /app && npm install && git config --global --add safe.directory /app && git config core.filemode false && cd /app && opencode web --port 8010 --hostname 0.0.0.0",
   "customizations": {
     "vscode": {
       "settings": {

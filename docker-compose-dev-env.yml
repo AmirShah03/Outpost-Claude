@@ -21,6 +21,7 @@ services:
     ports:
       - "3000:3000"
       - "8080:8080"
+      - "8010:8010"
     
     # 5. Keep the terminal active and the container running
     tty: true
