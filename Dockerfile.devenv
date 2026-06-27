@@ -43,7 +43,7 @@ USER $USERNAME
 # 7. Set the working directory
 WORKDIR /app
 
-RUN npm install --production
+RUN npm install && git config --global --add safe.directory /app && git config core.filemode false
 
 # 8. Keep the container alive so you can attach to it
 CMD ["sleep", "infinity"]
